@@ -23,6 +23,39 @@ class CodeActionResolveExpectationsTest < ExpectationsTestRunner
     assert_equal(build_code_action(json_expectations(expected)), JSON.parse(actual.to_json))
   end
 
+  def test_toggle_block_do_end_to_brackets
+    @__params = {
+      title: "Refactor: Toggle block style",
+      data: {
+        range: {
+          start: { line: 0, character: 1 },
+          end: { line: 3, character: 4 },
+        },
+        uri: "file:///fake.rb",
+      },
+    }
+    source = <<~RUBY
+      [1, 2, 3].each do |number|
+        puts number * 2
+      end
+    RUBY
+    expected = {
+      "title" => "Refactor: Toggle block style",
+      "edit" => {
+        "documentChanges" => [{
+          "edits" => [{
+            "range" => {
+              "start" => { "line" => 0, "character" => 0 },
+              "end" => { "line" => 2, "character" => 3 },
+            },
+            "newText" => "[1, 2, 3].each { |number| puts number * 2 }",
+          }],
+        }],
+      },
+    }
+    assert_expectations(source, expected)
+  end
+
   private
 
   def default_args
