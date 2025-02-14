@@ -107,6 +107,24 @@ class CodeActionResolveExpectationsTest < ExpectationsTestRunner
     assert_match_to_expected(source, expected)
   end
 
+  def test_returns_error_when_selected_code_is_not_block_with_hash_and_array
+    @__params = {
+      kind: "refactor.rewrite",
+      title: "Refactor: Toggle block style",
+      data: {
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 45 },
+        },
+        uri: "file:///fake",
+      },
+    }
+    source = <<~RUBY
+      { key1: [1, 2, 3], key2: { nested_key: "value" }}
+    RUBY
+    assert_equal(RubyLsp::Requests::CodeActionResolve::Error::InvalidTargetRange, run_expectations(source))
+  end
+
   private
 
   def default_args
@@ -158,3 +176,4 @@ class CodeActionResolveExpectationsTest < ExpectationsTestRunner
     end
   end
 end
+{ key1: [1, 2, 3], key2: { nested_key: "value" } }
