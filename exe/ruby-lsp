@@ -43,6 +43,9 @@ parser = OptionParser.new do |opts|
     puts "See https://shopify.github.io/ruby-lsp/ for more information"
     exit(0)
   end
+
+  opts.on("--update-server", "update ruby-lsp server version") do
+  end
 end
 
 begin
