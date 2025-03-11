@@ -45,7 +45,6 @@ module RubyLsp
       @custom_gemfile = T.let(@custom_dir + @gemfile_name, Pathname)
     end
 
-    sig { return(T::Boolean) }
     def update!
       unless @custom_dir.exist? && @custom_gemfile.exist?
         puts "Error: No composed Ruby LSP bundle found. Run the Ruby LSP server to set it up first"
@@ -53,6 +52,146 @@ module RubyLsp
       end
 
       puts "Updating Ruby LSP server dependencies..."
+      env = bundler_settings_as_env
+      env["BUNDLE_GEMFILE"] = @custom_gemfile.to_s
+
+      convert_paths_to_absolute!(env)
+
+      bundler_version = retrieve_bundler_version
+      if bundler_version
+        env["BUNDLER_VERSION"] = bundler_version.to_s
+        puts "Using Bundler version: #{bundler_version}"
+      end
+
+      begin
+        update_result = run_bundle_update(env)
+        puts "Ruby LSP server dependencies successfully updated!"
+        update_result
+      rescue DependencyConstraintError => e
+        puts "Error: #{e.message}"
+        puts "The gem '#{e.gem_name}' in your project is preventing the update due to constraint: #{e.constraint}"
+        puts "The latest available version is: #{e.available_version}"
+        false
+      rescue UpdateFailure => e
+        puts "Error updating Ruby LSP server dependencies: #{e.message}"
+        false
+      end
+    end
+
+    private
+
+    sig { params(env: T::Hash[String, String]).returns(T::Boolean) }
+    def run_bundle_update(env)
+      original_env = ENV.to_h
+      begin
+        # Replace the environment
+        ENV.replace(original_env.merge(env))
+
+        puts "Using environment:"
+        env.each { |k, v| puts "  #{k}=#{v}" }
+
+        # Run bundle update for ruby-lsp and its dependencies
+        gems = ["ruby-lsp", "ruby-lsp-rails", "debug", "prism"]
+
+        # Add branch specification if provided
+        update_options = { conservative: true }
+
+        puts "Updating gems: #{gems.join(", ")}"
+
+        output = capture_bundler_output do
+          Bundler.settings.temporary(frozen: false) do
+            Bundler::CLI::Update.new(update_options, gems).run
+          end
+        end
+
+        puts output
+
+        # Check if the update succeeded by looking for the "Bundle updated!" message
+        return true if output.include?("Bundle updated!")
+
+        # If we get here without a success message, something went wrong
+        # Try to identify dependency constraint issues
+        detect_constraint_issues(output)
+
+        # If no specific issue was found, raise a generic error
+        raise UpdateFailure, "Update failed."
+      rescue Bundler::GemNotFound => e
+        raise UpdateFailure, "Gem not found: #{e.message}"
+      rescue Bundler::GitError => e
+        raise UpdateFailure, "Git error: #{e.message}"
+      rescue Bundler::VersionConflict => e
+        raise UpdateFailure, "Version conflict: #{e.message}"
+      ensure
+        # Restore the original environment
+        ENV.replace(original_env)
+      end
+    end
+
+    sig { params(output: String).void }
+    def detect_constraint_issues(output)
+      # Look for constraint messages in the output
+      output.scan(/Bundler could not find compatible versions for gem "([\w\-]+)".*?Required by.*?(\S+).*?The latest version is ([\d\.]+)/).each do |gem_name, constraint, latest_version| # rubocop:disable Layout/LineLength
+        raise DependencyConstraintError.new(gem_name, constraint, latest_version)
+      end
+    end
+
+    sig { params(block: T.proc.void).returns(String) }
+    def capture_bundler_output(&block)
+      original_stdout = $stdout
+      original_stderr = $stderr
+      output_capture = StringIO.new
+      begin
+        $stdout = output_capture
+        $stderr = output_capture
+        yield
+        output_capture.string
+      ensure
+        $stdout = original_stdout
+        $stderr = original_stderr
+      end
+    end
+
+    sig { returns(T::Hash[String, String]) }
+    def bundler_settings_as_env
+      local_config_path = File.join(@project_path, ".bundle")
+      # Get all Bundler settings (global and local)
+      settings = begin
+        Dir.exist?(local_config_path) ? Bundler::Settings.new(local_config_path) : Bundler::Settings.new
+      rescue Bundler::GemfileNotFound
+        Bundler::Settings.new
+      end
+
+      # Convert settings to environment variables
+      settings.all.to_h do |e|
+        key = settings.key_for(e)
+        value = Array(settings[e]).join(":").tr(" ", ":")
+        [key, value]
+      end
+    end
+
+    sig { params(env: T::Hash[String, String]).void }
+    def convert_paths_to_absolute!(env)
+      env.each do |key, value|
+        next unless key.start_with?("BUNDLE_") && key.end_with?("_PATH", "PATH")
+        next if value.start_with?("/") # Skip if already absolute
+
+        # Convert relative path to absolute
+        env[key] = File.expand_path(value, @project_path)
+        puts "Converting #{key}=#{value} to #{env[key]}"
+      end
+    end
+
+    sig { returns(T.nilable(Gem::Version)) }
+    def retrieve_bundler_version
+      return unless @gemfile
+
+      lockfile = @gemfile.dirname + "Gemfile.lock"
+      return unless lockfile.exist?
+
+      Bundler::LockfileParser.new(lockfile.read).bundler_version
+    rescue => e
+      puts "Warning: Unable to determine Bundler version: #{e.message}"
+      nil
     end
   end
 end
