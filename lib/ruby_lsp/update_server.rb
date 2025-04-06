@@ -1,4 +1,4 @@
-# typed: true
+# typed: strict
 # frozen_string_literal: true
 
 require "sorbet-runtime"
@@ -16,8 +16,14 @@ module RubyLsp
     class UpdateFailure < StandardError; end
 
     class DependencyConstraintError < StandardError
-      attr_reader :gem_name, :constraint, :available_version
+      #: String
+      attr_reader :gem_name
+      #: String
+      attr_reader :constraint
+      #: String
+      attr_reader :available_version
 
+      #: (String gem_name, String constraint, String available_version) -> void
       def initialize(gem_name, constraint, available_version)
         @gem_name = gem_name
         @constraint = constraint
@@ -45,6 +51,7 @@ module RubyLsp
       @custom_gemfile = T.let(@custom_dir + @gemfile_name, Pathname)
     end
 
+    sig { returns(T.untyped) }
     def update!
       unless @custom_dir.exist? && @custom_gemfile.exist?
         puts "Error: No composed Ruby LSP bundle found. Run the Ruby LSP server to set it up first"
@@ -130,8 +137,13 @@ module RubyLsp
     sig { params(output: String).void }
     def detect_constraint_issues(output)
       # Look for constraint messages in the output
-      output.scan(/Bundler could not find compatible versions for gem "([\w\-]+)".*?Required by.*?(\S+).*?The latest version is ([\d\.]+)/).each do |gem_name, constraint, latest_version| # rubocop:disable Layout/LineLength
-        raise DependencyConstraintError.new(gem_name, constraint, latest_version)
+      output.scan(/Bundler could not find compatible versions for gem "([\w\-]+)".*?Required by.*?(\S+).*?The latest version is ([\d\.]+)/).each do |match| # rubocop:disable Layout/LineLength
+        next unless match.is_a?(Array) && match.length >= 3
+
+        gem_name, constraint, latest_version = match
+        if gem_name.is_a?(String) && constraint.is_a?(String) && latest_version.is_a?(String)
+          raise DependencyConstraintError.new(gem_name, constraint, latest_version)
+        end
       end
     end
 
