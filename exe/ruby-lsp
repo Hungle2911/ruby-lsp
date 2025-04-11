@@ -45,6 +45,7 @@ parser = OptionParser.new do |opts|
   end
 
   opts.on("--update-server", "Update ruby-lsp server version") do
+    options[:update_server] = true
   end
 end
 
@@ -148,6 +149,13 @@ if options[:doctor]
     index.index_file(uri)
   end
   return
+end
+
+if options[:update_server]
+  require_relative "../lib/ruby_lsp/update_server"
+  project_path = Dir.pwd
+  result = RubyLsp::UpdateServer.new(project_path).update!
+  exit(result ? 0 : 1)
 end
 
 # Ensure all output goes out stderr by default to allow puts/p/pp to work

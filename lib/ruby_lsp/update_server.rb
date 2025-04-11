@@ -29,12 +29,12 @@ module RubyLsp
         @constraint = constraint
         @available_version = available_version
         super("Unable to update #{gem_name} due to version constraint: #{constraint}.
-        Latest available version: #{available_version} ")
+        Latest available version: #{available_version}")
       end
     end
 
-    sig { params(project_path: String, options: T::Hash[Symbol, T.untyped]).void }
-    def initialize(project_path, options = {})
+    sig { params(project_path: String).void }
+    def initialize(project_path)
       @project_path = project_path
 
       # Custom bundle paths
@@ -51,7 +51,7 @@ module RubyLsp
       @custom_gemfile = T.let(@custom_dir + @gemfile_name, Pathname)
     end
 
-    sig { returns(T.untyped) }
+    sig { returns(T::Boolean) }
     def update!
       unless @custom_dir.exist? && @custom_gemfile.exist?
         puts "Error: No composed Ruby LSP bundle found. Run the Ruby LSP server to set it up first"
